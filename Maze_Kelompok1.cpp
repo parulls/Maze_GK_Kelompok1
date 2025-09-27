@@ -164,6 +164,21 @@ bool checkCollision(float x, float y) {
     return false;
 }
 
+// fungsi manual translasi berdasarkan rumus translasi 2D
+// Matrix translasi: [1 0 dx]   [x]   [x + dx]
+//                   [0 1 dy] × [y] = [y + dy]
+//                   [0 0  1]   [1]   [1]
+void translatePlayer(float dx, float dy) {
+    float new_x = player.x + dx;   // x' = x + Δx
+    float new_y = player.y + dy;   // y' = y + Δy
+    if (!checkCollision(new_x, player.y)) {
+        player.x = new_x;
+    }
+    if (!checkCollision(player.x, new_y)) {
+        player.y = new_y;
+    }
+}
+
 // fungsi untuk memancarkan sinar dari player dan mendeteksi tabrakan dengan dinding
 void castRays() {
     for (auto& ray : rays) {
@@ -216,8 +231,6 @@ void drawQuad(float x1, float y1, float x2, float y2,
     glVertex2f(x1, y2);
     glEnd();
 }
-
-
 
 // merender tampilan 2D
 void render2D() {
@@ -299,39 +312,25 @@ void display() {
     glutSwapBuffers();
 }
 
-// fungsi update untuk mengatur logika permainan
+// fungsi update untuk mengatur logika permainan dengan implementasi translasi manual
 void update(int value) {
-    const float move_speed = 2.0f;
-    const float turn_speed = 3.0f;
+    float moveSpeed = 2.0f;
+    float rotSpeed = 2.0f;
 
-    // input handling
-    if (keys['a'] || keys['A']) {
-        player.dir -= turn_speed;
-    }
-    if (keys['d'] || keys['D']) {
-        player.dir += turn_speed;
-    }
-
-    float new_x = player.x;
-    float new_y = player.y;
-
+    // Implementasi translasi manual menggunakan fungsi translatePlayer()
     if (keys['w'] || keys['W']) {
-        float angle = player.dir * M_PI / 180.0f;
-        new_x = player.x + std::cos(angle) * move_speed;
-        new_y = player.y + std::sin(angle) * move_speed;
+        translatePlayer(moveSpeed * cos(player.dir * M_PI / 180.0f),
+            moveSpeed * sin(player.dir * M_PI / 180.0f));
     }
     if (keys['s'] || keys['S']) {
-        float angle = player.dir * M_PI / 180.0f;
-        new_x = player.x - std::cos(angle) * move_speed;
-        new_y = player.y - std::sin(angle) * move_speed;
+        translatePlayer(-moveSpeed * cos(player.dir * M_PI / 180.0f),
+            -moveSpeed * sin(player.dir * M_PI / 180.0f));
     }
-
-    // mendeteksi tabrakan sebelum memperbarui posisi player
-    if (!checkCollision(new_x, player.y)) {
-        player.x = new_x;
+    if (keys['a'] || keys['A']) {
+        player.dir -= rotSpeed; // rotasi kiri
     }
-    if (!checkCollision(player.x, new_y)) {
-        player.y = new_y;
+    if (keys['d'] || keys['D']) {
+        player.dir += rotSpeed; // rotasi kanan
     }
 
     // menjaga agar arah tetap dalam 0-360 derajat
