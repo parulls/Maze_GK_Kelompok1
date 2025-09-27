@@ -71,7 +71,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\Project Sem 5\Grafika Komputer\freeglut\freeglut;$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\chari\OneDrive\Desktop\semester 5\Grafika Komputer\freeglut\freeglut</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>C:\Project Sem 5\Grafika Komputer\freeglut\freeglut;$(IncludePath)</IncludePath>
@@ -89,6 +89,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Project Sem 5\Grafika Komputer\freeglut\freeglut;$(IncludePath)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp14</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
