@@ -305,7 +305,7 @@ void initObstacles() {
 void initRays() {
     rays.clear();
     float angle_step = FOV / NUM_RAYS;      // langkah sudut antar sinar
-    float start_angle = FOV / 2.0f;       // sudut awal (setengah FOV ke kiri)
+    float start_angle = -FOV / 2.0f;       // sudut awal (setengah FOV ke kiri)
 
     for (int i = 0; i < NUM_RAYS; i++) {
         rays.emplace_back(start_angle + i * angle_step);
@@ -719,6 +719,13 @@ void render2D() {
     if (!player.invulnerable || (int)(getCurrentTime() * 10) % 2 == 0) {
         drawCircle(player.x, player.y, player.radius, 0.7f, 0.2f, 0.5f);
 
+        // Gambar arah player
+        float dirX = player.x + player.radius * 1.5f * cos(player.dir * M_PI / 180.0f);
+        float dirY = player.y + player.radius * 1.5f * sin(player.dir * M_PI / 180.0f);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glVertex2f(player.x, player.y);
+        glVertex2f(dirX, dirY);
+        glEnd();
     }
 }
 
@@ -840,6 +847,21 @@ void render3D() {
     }
 }
 
+// Hitung lebar teks dengan font GLUT
+int getBitmapStringWidth(void* font, const std::string& str) {
+    int width = 0;
+    for (char c : str) {
+        width += glutBitmapWidth(font, c);
+    }
+    return width;
+}
+
+// Render teks dengan posisi center horizontal
+void renderBitmapStringCenter(int x, int y, void* font, const std::string& str) {
+    int width = getBitmapStringWidth(font, str);
+    renderBitmapString(x - width / 2, y, font, str);
+}
+
 // Render layar kemenangan
 void renderWinScreen() {
     setOrthoViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, 0, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
@@ -849,17 +871,21 @@ void renderWinScreen() {
 
     // Judul kemenangan
     glColor3f(1.0f, 1.0f, 0.0f);
-    renderBitmapString(WINDOW_WIDTH / 2 - 100, WINDOW_HEIGHT / 2 + 50, GLUT_BITMAP_TIMES_ROMAN_24, "SELAMAT!");
+    renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 50,
+        GLUT_BITMAP_TIMES_ROMAN_24, "SELAMAT!");
 
     // Waktu penyelesaian
     std::ostringstream timeStr;
     timeStr << "Waktu: " << std::fixed << std::setprecision(2) << gameTime << " detik";
     glColor3f(1.0f, 1.0f, 1.0f);
-    renderBitmapString(WINDOW_WIDTH / 2 - 100, WINDOW_HEIGHT / 2 - 10, GLUT_BITMAP_HELVETICA_18, timeStr.str());
+    renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 10,
+        GLUT_BITMAP_HELVETICA_18, timeStr.str());
 
     // Instruksi restart
-    renderBitmapString(WINDOW_WIDTH / 2 - 80, WINDOW_HEIGHT / 2 - 50, GLUT_BITMAP_HELVETICA_12, "Ketik R untuk mulai ulang atau ESC untuk keluar");
+    renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 50,
+        GLUT_BITMAP_HELVETICA_12, "Ketik R untuk mulai ulang atau ESC untuk keluar");
 }
+
 
 // Render layar game over
 void renderGameOverScreen() {
@@ -870,20 +896,25 @@ void renderGameOverScreen() {
 
     // Judul game over
     glColor3f(1.0f, 0.0f, 0.0f);
-    renderBitmapString(WINDOW_WIDTH / 2 - 80, WINDOW_HEIGHT / 2 + 50, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER!");
+    renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 50,
+        GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER!");
 
     // Penyebab game over
     glColor3f(1.0f, 1.0f, 1.0f);
     if (player.lives <= 0) {
-        renderBitmapString(WINDOW_WIDTH / 2 - 60, WINDOW_HEIGHT / 2 + 20, GLUT_BITMAP_HELVETICA_18, "Kamu kehabisan nyawa!");
+        renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 20,
+            GLUT_BITMAP_HELVETICA_18, "Kamu kehabisan nyawa!");
     }
     if (getTimeRemaining() <= 0) {
-        renderBitmapString(WINDOW_WIDTH / 2 - 50, WINDOW_HEIGHT / 2 + 20, GLUT_BITMAP_HELVETICA_18, "Waktu habis!");
+        renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 20,
+            GLUT_BITMAP_HELVETICA_18, "Waktu habis!");
     }
 
     // Instruksi restart
-    renderBitmapString(WINDOW_WIDTH / 2 - 80, WINDOW_HEIGHT / 2 - 50, GLUT_BITMAP_HELVETICA_12, "Ketik R untuk mulai ulang atau ESC untuk keluar");
+    renderBitmapStringCenter(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 50,
+        GLUT_BITMAP_HELVETICA_12, "Ketik R untuk mulai ulang atau ESC untuk keluar");
 }
+
 
 // Fungsi utama display
 void display() {
