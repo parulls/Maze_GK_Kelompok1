@@ -90,6 +90,19 @@ struct Obstacle {
     }
 };
 
+// Struct untuk obstacle horizontal (kayu bergerak)
+struct HorizontalObstacle {
+    float x, y;           // posisi
+    float width, height;  // ukuran balok
+    float speed;          // kecepatan gerak
+    float minX, maxX;     // batas gerak kiri-kanan
+    bool movingRight;     // arah gerak
+
+    HorizontalObstacle(float px, float py, float w, float h, float spd, float minx, float maxx)
+        : x(px), y(py), width(w), height(h), speed(spd), minX(minx), maxX(maxx), movingRight(true) {
+    }
+};
+
 // Struct untuk key/kunci
 struct Key {
     float x, y;        // posisi kunci
@@ -103,13 +116,14 @@ struct Key {
 Player player(10.0f, 10.0f);               // Player dimulai di posisi (60, 60)
 std::vector<Wall> maze;                     // Daftar dinding maze
 std::vector<Ray> rays;                      // Daftar sinar untuk ray casting
-std::vector<Obstacle> obstacles;            // Daftar rintangan bergerak
-Goal goal(540.0f, 180.0f, 30.0f, 40.0f, true); // Goal di ujung maze, memerlukan kunci
+std::vector<Obstacle> obstacles;             // Daftar rintangan bergerak
+std::vector<HorizontalObstacle> horizontalObstacles;
+Goal goal(525.0f, 60.0f, 30.0f, 20.0f, true); // Goal di ujung maze, memerlukan kunci
 Key gameKey(320.0f, 200.0f, 8.0f);        // Kunci di tengah maze
 
 // Konstanta ray casting
 const float RAY_LENGTH = 500.0f;
-const int NUM_RAYS = 600;
+const int NUM_RAYS = 400;
 const float FOV = 60.0f;
 
 // Game state variables
@@ -118,6 +132,7 @@ clock_t startTime;                          // waktu mulai permainan
 const float GAME_DURATION = 60.0f;         // durasi permainan dalam detik (1 menit)
 float gameTime = 0.0f;                     // waktu bermain saat ini
 bool keys[256] = { false };                // status keyboard
+float warningShownTime = -10.0f;
 
 // Random number generator
 std::random_device rd;
@@ -281,7 +296,7 @@ void initObstacles() {
     std::uniform_real_distribution<float> radiusDist(8.0f, 15.0f);
 
     // Buat 4-6 obstacles dengan posisi random
-    std::uniform_int_distribution<int> numObstacles(4, 6);
+    std::uniform_int_distribution<int> numObstacles(3,4);
     int numObs = numObstacles(gen);
 
     for (int i = 0; i < numObs; i++) {
@@ -299,6 +314,30 @@ void initObstacles() {
         obstacles.emplace_back(pos.first, pos.second, radius, speed, direction,
             minX, maxX, minY, maxY);
     }
+}
+
+void initHorizontalObstacles() {
+    horizontalObstacles.clear();
+    
+    // Obstacle 1: Lorong horizontal di tengah-atas
+    float y1 = 100;
+    float minX1 = 360;  // batas kiri (setelah dinding vertikal)
+    float maxX1 = 400;  // batas kanan (sebelum dinding vertikal)
+    float width1 = 15;
+    float x1 = (minX1 + maxX1) / 2;
+    
+    // Obstacle 2: Lorong horizontal di tengah-bawah
+    float y2 = 280;
+    float minX2 = 240;  // batas kiri
+    float maxX2 = 280;  // batas kanan
+    float width2 = 15;
+    float x2 = (minX2 + maxX2) / 2;
+    
+    float height = 3.0f;
+    float speed = 1.0f;
+
+    horizontalObstacles.emplace_back(x1, y1, width1, height, speed, minX1, maxX1);
+    horizontalObstacles.emplace_back(x2, y2, width2, height, speed, minX2, maxX2);
 }
 
 // Inisialisasi sinar untuk ray casting
@@ -454,6 +493,13 @@ bool checkObstacleCollision(float x, float y) {
             return true;
         }
     }
+
+    for (const auto& obs : horizontalObstacles) {
+        if (x > obs.x - obs.width / 2 && x < obs.x + obs.width / 2 &&
+            y > obs.y - obs.height / 2 && y < obs.y + obs.height / 2) {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -522,6 +568,23 @@ void updateObstacles() {
         // Update posisi
         obstacle.x = std::max(obstacle.minX, std::min(obstacle.maxX, newX));
         obstacle.y = std::max(obstacle.minY, std::min(obstacle.maxY, newY));
+    }
+}
+
+void updateHorizontalObstacles() {
+    for (auto& obs : horizontalObstacles) {
+        if (obs.movingRight) {
+            obs.x += obs.speed;
+            if (obs.x + obs.width / 2 >= obs.maxX) {
+                obs.movingRight = false;
+            }
+        }
+        else {
+            obs.x -= obs.speed;
+            if (obs.x - obs.width / 2 <= obs.minX) {
+                obs.movingRight = true;
+            }
+        }
     }
 }
 
@@ -620,6 +683,73 @@ void castRays() {
                 }
             }
         }
+
+        // Cek tabrakan dengan horizontal obstacles
+        // Cek tabrakan dengan horizontal obstacles
+        for (const auto& obs : horizontalObstacles) {
+            float rayEndX = ray.x + ray.dx * RAY_LENGTH;
+            float rayEndY = ray.y + ray.dy * RAY_LENGTH;
+
+            float left = obs.x - obs.width / 2;
+            float right = obs.x + obs.width / 2;
+            float top = obs.y - obs.height / 2;
+            float bottom = obs.y + obs.height / 2;
+
+            float ix, iy;
+            float closestDist = ray.distance;
+            bool foundHit = false;
+
+            // Cek semua 4 sisi, simpan yang paling deket
+            float tempX, tempY;
+
+            if (lineIntersection(ray.x, ray.y, rayEndX, rayEndY, left, top, right, top, tempX, tempY)) {
+                float dist = std::sqrt((tempX - ray.x) * (tempX - ray.x) + (tempY - ray.y) * (tempY - ray.y));
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    ix = tempX;
+                    iy = tempY;
+                    foundHit = true;
+                }
+            }
+
+            if (lineIntersection(ray.x, ray.y, rayEndX, rayEndY, right, top, right, bottom, tempX, tempY)) {
+                float dist = std::sqrt((tempX - ray.x) * (tempX - ray.x) + (tempY - ray.y) * (tempY - ray.y));
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    ix = tempX;
+                    iy = tempY;
+                    foundHit = true;
+                }
+            }
+
+            if (lineIntersection(ray.x, ray.y, rayEndX, rayEndY, right, bottom, left, bottom, tempX, tempY)) {
+                float dist = std::sqrt((tempX - ray.x) * (tempX - ray.x) + (tempY - ray.y) * (tempY - ray.y));
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    ix = tempX;
+                    iy = tempY;
+                    foundHit = true;
+                }
+            }
+
+            if (lineIntersection(ray.x, ray.y, rayEndX, rayEndY, left, bottom, left, top, tempX, tempY)) {
+                float dist = std::sqrt((tempX - ray.x) * (tempX - ray.x) + (tempY - ray.y) * (tempY - ray.y));
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    ix = tempX;
+                    iy = tempY;
+                    foundHit = true;
+                }
+            }
+
+            if (foundHit) {
+                ray.distance = closestDist;
+                ray.hitX = ix;
+                ray.hitY = iy;
+                ray.hit = true;
+                ray.hitType = 3;
+            }
+        }
     }
 }
 
@@ -701,6 +831,17 @@ void render2D() {
         drawCircle(obstacle.x, obstacle.y, obstacle.radius, 0.8f, 0.2f, 0.2f);
     }
 
+    // Gambar horizontal obstacles (kayu)
+    for (const auto& obs : horizontalObstacles) {
+        glColor3f(0.6f, 0.3f, 0.1f); // Warna coklat kayu
+        glBegin(GL_QUADS);
+        glVertex2f(obs.x - obs.width / 2, obs.y - obs.height / 2);
+        glVertex2f(obs.x + obs.width / 2, obs.y - obs.height / 2);
+        glVertex2f(obs.x + obs.width / 2, obs.y + obs.height / 2);
+        glVertex2f(obs.x - obs.width / 2, obs.y + obs.height / 2);
+        glEnd();
+    }
+
     // Gambar kunci jika belum diambil
     if (!gameKey.collected) {
         drawCircle(gameKey.x, gameKey.y, gameKey.size, 1.0f, 1.0f, 0.0f);
@@ -729,6 +870,50 @@ void render2D() {
     }
 }
 
+
+// Hitung lebar teks dengan font GLUT
+int getBitmapStringWidth(void* font, const std::string& str) {
+    int width = 0;
+    for (char c : str) {
+        width += glutBitmapWidth(font, c);
+    }
+    return width;
+}
+
+// Render teks dengan posisi center horizontal
+void renderBitmapStringCenter(int x, int y, void* font, const std::string& str) {
+    int width = getBitmapStringWidth(font, str);
+    renderBitmapString(x - width / 2, y, font, str);
+}
+
+// Fungsi baru untuk render stroke text (lebih besar & bisa di-scale)
+void renderStrokeString(float x, float y, float scale, const std::string& str) {
+    glPushMatrix();
+    glTranslatef(x, y, 0);
+    glScalef(scale, -scale, 1.0f);
+    glLineWidth(4.5f); // Bikin lebih tebal
+
+    for (char c : str) {
+        glutStrokeCharacter(GLUT_STROKE_ROMAN, c);
+    }
+    glPopMatrix();
+}
+
+// Fungsi untuk hitung lebar stroke text
+float getStrokeStringWidth(float scale, const std::string& str) {
+    float width = 0;
+    for (char c : str) {
+        width += glutStrokeWidth(GLUT_STROKE_ROMAN, c);
+    }
+    return width * scale;
+}
+
+// Render stroke text center
+void renderStrokeStringCenter(float x, float y, float scale, const std::string& str) {
+    float width = getStrokeStringWidth(scale, str);
+    renderStrokeString(x - width / 2, y, scale, str);
+}
+
 // Render tampilan 3D (first-person view) dengan pintu dan rintangan
 void render3D() {
     setOrthoViewport(MAP_WIDTH, 0, MAP_WIDTH, MAP_HEIGHT, 0, MAP_WIDTH, MAP_HEIGHT, 0);
@@ -740,51 +925,51 @@ void render3D() {
     drawQuad(0, MAP_HEIGHT / 2, MAP_WIDTH, MAP_HEIGHT, 0.2f, 0.3f, 0.3f);
 
     // Gambar dinding, pintu, dan rintangan berdasarkan ray casting
+    // Di render3D(), ganti bagian render wall jadi:
     float slice_width = (float)MAP_WIDTH / NUM_RAYS;
     for (int i = 0; i < NUM_RAYS; i++) {
         if (rays[i].hit) {
-            // Koreksi fish-eye effect
             float corrected_distance = rays[i].distance * std::cos(rays[i].angle * M_PI / 180.0f);
-
-            // Hitung tinggi berdasarkan jarak
             float wall_height = (20.0f / corrected_distance) * MAP_HEIGHT;
             if (wall_height > MAP_HEIGHT) wall_height = MAP_HEIGHT;
 
-            // Hitung kecerahan berdasarkan jarak
             float brightness = 1.0f - (corrected_distance / RAY_LENGTH);
             if (brightness > 1.0f) brightness = 1.0f;
             if (brightness < 0.1f) brightness = 0.1f;
 
+            // OVERLAP DINAMIS: makin deket makin besar overlap-nya
+            float overlap = 2.5f + (1.0f - brightness) * 2.0f;  // 2.5 sampai 4.5
+
             float x = i * slice_width;
             float y = (MAP_HEIGHT - wall_height) / 2.0f;
 
-            // Pilih warna berdasarkan tipe objek yang terkena ray
             if (rays[i].hitType == 0) {
-                // Dinding - warna abu-abu kebiruan dengan brightness
-                drawQuad(x, y, x + slice_width, y + wall_height,
+                drawQuad(x, y, x + slice_width + overlap, y + wall_height,
                     brightness * 0.5f, brightness * 0.6f, brightness * 0.6f);
             }
             else if (rays[i].hitType == 1) {
-                // Pintu/Goal - warna hijau dengan efek berkilau
                 float greenIntensity = brightness * (0.8f + 0.2f * sin(getCurrentTime() * 5.0f));
                 if (!player.hasKey) {
-                    // Pintu terkunci - warna hijau gelap dengan efek merah
-                    drawQuad(x, y, x + slice_width, y + wall_height,
+                    drawQuad(x, y, x + slice_width + overlap, y + wall_height,
                         brightness * 0.3f, greenIntensity * 0.6f, brightness * 0.1f);
-                } else {
-                    // Pintu terbuka - warna hijau cerah
-                    drawQuad(x, y, x + slice_width, y + wall_height,
+                }
+                else {
+                    drawQuad(x, y, x + slice_width + overlap, y + wall_height,
                         brightness * 0.2f, greenIntensity, brightness * 0.2f);
                 }
             }
             else if (rays[i].hitType == 2) {
-                // Obstacle - warna merah dengan efek pulsing
                 float redIntensity = brightness * (0.7f + 0.3f * sin(getCurrentTime() * 8.0f));
-                drawQuad(x, y, x + slice_width, y + wall_height,
+                drawQuad(x, y, x + slice_width + overlap, y + wall_height,
                     redIntensity, brightness * 0.1f, brightness * 0.1f);
+            }
+            else if (rays[i].hitType == 3) {
+                drawQuad(x, y, x + slice_width + overlap, y + wall_height,
+                    brightness * 0.6f, brightness * 0.3f, brightness * 0.1f);
             }
         }
     }
+
 
     // Gambar HUD (Head-Up Display) di tampilan 3D
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -801,10 +986,24 @@ void render3D() {
     }
 
     // Nyawa di 3D view
-    glColor3f(1.0f, 1.0f, 1.0f);
-    std::ostringstream livesStr;
-    livesStr << "LIVES: " << player.lives;
-    renderBitmapString(10, MAP_HEIGHT - 55, GLUT_BITMAP_HELVETICA_18, livesStr.str());
+    for (int i = 0; i < player.lives; i++) {
+        float heartX = MAP_WIDTH - 120 + ((2 - i) * 32);
+        float heartY = 30;
+
+        // Gambar hati dengan bentuk sederhana (dua lingkaran + segitiga)
+        glColor3f(1.0f, 0.0f, 0.0f);
+
+        // Bagian atas hati (dua lingkaran) 
+        drawCircle(heartX - 5, heartY, 5.1, 1.0f, 0.0f, 0.0f);
+        drawCircle(heartX + 5, heartY, 5.1, 1.0f, 0.0f, 0.0f);
+
+        // Bagian bawah hati (segitiga) - gedein koordinatnya
+        glBegin(GL_TRIANGLES);
+        glVertex2f(heartX - 11, heartY);
+        glVertex2f(heartX + 11, heartY);
+        glVertex2f(heartX, heartY + 14);
+        glEnd();
+    }
 
     // Timer di 3D view
     float timeRemaining = getTimeRemaining();
@@ -828,6 +1027,27 @@ void render3D() {
         renderBitmapString(10, MAP_HEIGHT - 80, GLUT_BITMAP_HELVETICA_18, "INVULNERABLE!");
     }
 
+    /// Warning 30 detik - PUTIH & BESAR
+    if (timeRemaining <= 30.0f && timeRemaining > 3.0f) {
+        if (warningShownTime < 0 || timeRemaining > 28.0f) {
+            warningShownTime = getCurrentTime();
+        }
+        float timeSinceWarning = getCurrentTime() - warningShownTime;
+        if (timeSinceWarning < 1.0f) {
+            glColor3f(1.0f, 1.0f, 1.0f);  // PUTIH
+            renderStrokeStringCenter(MAP_WIDTH / 2, MAP_HEIGHT / 2 - 50, 0.3f, "30 SECONDS LEFT!");
+        }
+    }
+
+    // Countdown 3 detik - PUTIH & LEBIH BESAR
+    if (timeRemaining <= 3.0f && timeRemaining > 0.0f) {
+        int countdown = (int)ceil(timeRemaining);
+        glColor3f(1.0f, 1.0f, 1.0f);  // PUTIH
+        std::ostringstream countStr;
+        countStr << countdown;
+        renderStrokeStringCenter(MAP_WIDTH / 2, MAP_HEIGHT / 2, 0.5f, countStr.str());  // Scale 0.5 = besar banget
+    }
+
     // Crosshair (bidikan tengah)
     glColor3f(1.0f, 1.0f, 1.0f);
     glLineWidth(2.0f);
@@ -845,21 +1065,6 @@ void render3D() {
         glColor3f(0.0f, 1.0f, 0.0f);
         renderBitmapString(MAP_WIDTH - 180, MAP_HEIGHT - 55, GLUT_BITMAP_HELVETICA_12, "TEMUKAN PNTU KELUAR!");
     }
-}
-
-// Hitung lebar teks dengan font GLUT
-int getBitmapStringWidth(void* font, const std::string& str) {
-    int width = 0;
-    for (char c : str) {
-        width += glutBitmapWidth(font, c);
-    }
-    return width;
-}
-
-// Render teks dengan posisi center horizontal
-void renderBitmapStringCenter(int x, int y, void* font, const std::string& str) {
-    int width = getBitmapStringWidth(font, str);
-    renderBitmapString(x - width / 2, y, font, str);
 }
 
 // Render layar kemenangan
@@ -974,6 +1179,7 @@ void update(int value) {
         // Update sistem permainan
         updatePlayer();         // Update status player (invulnerability)
         updateObstacles();      // Update posisi rintangan
+        updateHorizontalObstacles();
         checkKeyCollection();   // Cek apakah kunci diambil
         checkGoalReached();     // Cek apakah mencapai tujuan
         castRays();            // Update ray casting
@@ -999,6 +1205,7 @@ void resetGame() {
 
     // Reset dan randomize obstacles
     initObstacles();
+    initHorizontalObstacles();
 
     // Reset dan randomize key position
     initKey();
@@ -1048,6 +1255,7 @@ int main(int argc, char** argv) {
     initMaze();        // Buat maze
     initRays();        // Buat rays untuk ray casting
     initObstacles();   // Buat rintangan bergerak
+    initHorizontalObstacles();
     initKey();         // Inisialisasi posisi kunci
 
     // Set waktu mulai
