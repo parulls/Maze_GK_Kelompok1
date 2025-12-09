@@ -71,7 +71,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\Project Sem 5\Grafika Komputer\freeglut\freeglut;$(IncludePath)</IncludePath>
+    <IncludePath>D:\kuliah\semester 5\Grafika Komputer\freeglut\freeglut</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>C:\Project Sem 5\Grafika Komputer\freeglut\freeglut;$(IncludePath)</IncludePath>

@@ -112,8 +112,20 @@ struct Key {
     Key(float px, float py, float s) : x(px), y(py), size(s), collected(false) {}
 };
 
+// Struct untuk Bendera Start
+struct StartFlag {
+    float x, y;
+    float radius;
+    StartFlag(float px, float py, float r) : x(px), y(py), radius(r) {}
+};
+
+// Konstanta Posisi Spawn (Agar Player & Bendera satu posisi)
+const float SPAWN_X = 60.0f;
+const float SPAWN_Y = 60.0f;
+
 // Variabel global
-Player player(10.0f, 10.0f);               // Player dimulai di posisi (60, 60)
+Player player(SPAWN_X, SPAWN_Y);
+StartFlag startFlag(SPAWN_X, SPAWN_Y, 4.0f);
 std::vector<Wall> maze;                     // Daftar dinding maze
 std::vector<Ray> rays;                      // Daftar sinar untuk ray casting
 std::vector<Obstacle> obstacles;             // Daftar rintangan bergerak
@@ -750,16 +762,81 @@ void castRays() {
                 ray.hitType = 3;
             }
         }
+
+        float dx = ray.dx;
+        float dy = ray.dy;
+        float fx = ray.x - startFlag.x;
+        float fy = ray.y - startFlag.y;
+
+        float a = dx * dx + dy * dy;
+        float b = 2 * (fx * dx + fy * dy);
+        float c = (fx * fx + fy * fy) - startFlag.radius * startFlag.radius;
+
+        float discriminant = b * b - 4 * a * c;
+        if (discriminant >= 0) {
+            float t1 = (-b - std::sqrt(discriminant)) / (2 * a);
+            float t2 = (-b + std::sqrt(discriminant)) / (2 * a);
+            float t = (t1 > 0) ? t1 : t2;
+
+            if (t > 0 && t <= RAY_LENGTH) {
+                if (t < ray.distance) { // Jika lebih dekat dari dinding/objek lain
+                    ray.distance = t;
+                    ray.hitX = ray.x + t * dx;
+                    ray.hitY = ray.y + t * dy;
+                    ray.hit = true;
+                    ray.hitType = 4; // TIPE BARU: 4 = Bendera Start
+                }
+            }
+        }
+
+        if (!gameKey.collected) {
+            float kdx = ray.dx; 
+            float kdy = ray.dy;
+            float kfx = ray.x - gameKey.x;
+            float kfy = ray.y - gameKey.y;
+
+            float visualRadius3D = 2.5f;
+
+            float ka = kdx * kdx + kdy * kdy;
+            float kb = 2 * (kfx * kdx + kfy * kdy);
+            float kc = (kfx * kfx + kfy * kfy) - visualRadius3D * visualRadius3D;
+
+            float kdiscriminant = kb * kb - 4 * ka * kc;
+            if (kdiscriminant >= 0) {
+                float t1 = (-kb - std::sqrt(kdiscriminant)) / (2 * ka);
+                float t2 = (-kb + std::sqrt(kdiscriminant)) / (2 * ka);
+                float t = (t1 > 0) ? t1 : t2;
+
+                if (t > 0 && t <= RAY_LENGTH) {
+                    if (t < ray.distance) {
+                        ray.distance = t;
+                        ray.hitX = ray.x + t * kdx;
+                        ray.hitY = ray.y + t * kdy;
+                        ray.hit = true;
+                        ray.hitType = 5; // KUNCI
+                    }
+                }
+            }
+        }
     }
 }
 
 // Set viewport dan proyeksi orthogonal
 void setOrthoViewport(int x, int y, int width, int height,
     float left, float right, float bottom, float top) {
+
+    // 1. Set area gambar
     glViewport(x, y, width, height);
+
+    // 2. Reset Matrix Proyeksi
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(left, right, bottom, top, -1, 1);
+
+    // PERBAIKAN PENTING: Ubah rentang Z (kedalaman) dari -1,1 menjadi -100,100
+    // Ini agar objek tidak dianggap "di luar" layar
+    glOrtho(left, right, bottom, top, -100.0f, 100.0f);
+
+    // 3. Reset Matrix Model
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
@@ -787,6 +864,93 @@ void drawCircle(float x, float y, float radius, float r, float g, float b) {
     glEnd();
 }
 
+//  menggambar marker bendera start (Checkerboard)
+void drawMarker2D(float x, float y, float size) {
+    // 1. Gambar Tiang
+    glColor3f(0.5f, 0.5f, 0.5f); // Abu-abu
+    glBegin(GL_QUADS);
+    // Kita gunakan glVertex3f dengan z=0.0f agar aman
+    glVertex3f(x - size * 0.10f, y - size, 0.0f);
+    glVertex3f(x + size * 0.10f, y - size, 0.0f);
+    glVertex3f(x + size * 0.10f, y + size, 0.0f);
+    glVertex3f(x - size * 0.10f, y + size, 0.0f);
+    glEnd();
+
+    // 2. Gambar Kain bendera (pola checker)
+    int cols = 4, rows = 3;
+    float flag_w = size * 1.6f;
+    float flag_h = size * 1.2f;
+
+    // Offset agar bendera ada di bagian atas tiang
+    // (Ingat: di OpenGL 2D kamu, Y makin kecil = makin ke atas)
+    float left = x + size * 0.10f;
+    float top = y - size; // Mulai dari ujung atas tiang
+
+    for (int i = 0; i < cols; ++i) {
+        for (int j = 0; j < rows; ++j) {
+            bool black = ((i + j) % 2 == 0);
+            float r = black ? 0.1f : 0.95f;
+            float g = black ? 0.1f : 0.95f;
+            float b = black ? 0.1f : 0.95f;
+            glColor3f(r, g, b);
+
+            float x1 = left + i * (flag_w / cols);
+            float y1 = top + j * (flag_h / rows);
+            float x2 = x1 + (flag_w / cols);
+            float y2 = y1 + (flag_h / rows);
+
+            glBegin(GL_QUADS);
+            glVertex3f(x1, y1, 0.0f);
+            glVertex3f(x2, y1, 0.0f);
+            glVertex3f(x2, y2, 0.0f);
+            glVertex3f(x1, y2, 0.0f);
+            glEnd();
+        }
+    }
+}
+
+// menggambar ikon Kunci
+void drawKeyMarker(float x, float y, float size) {
+    glColor3f(1.0f, 0.84f, 0.0f); // Warna Emas (Gold)
+
+    // 1. Kepala Kunci (Lingkaran)
+    drawCircle(x, y, size, 1.0f, 0.84f, 0.0f);
+
+    // Lubang kunci (Hitam)
+    drawCircle(x, y, size * 0.4f, 0.0f, 0.0f, 0.0f);
+
+    // Reset warna emas untuk batang
+    glColor3f(1.0f, 0.84f, 0.0f);
+
+    // 2. Batang Kunci & Gigi (Menggunakan Quads)
+    glBegin(GL_QUADS);
+    // Batang Utama (Vertical ke bawah)
+    // Ingat: Y makin besar = makin ke bawah
+    float shaftWidth = size * 0.6f;
+    float shaftLength = size * 2.5f;
+
+    glVertex3f(x - shaftWidth / 2, y, 0.0f);
+    glVertex3f(x + shaftWidth / 2, y, 0.0f);
+    glVertex3f(x + shaftWidth / 2, y + shaftLength, 0.0f);
+    glVertex3f(x - shaftWidth / 2, y + shaftLength, 0.0f);
+
+    // Gigi Kunci 1
+    float toothStart = y + shaftLength * 0.6f;
+    float toothSize = size * 0.5f;
+    glVertex3f(x + shaftWidth / 2, toothStart, 0.0f);
+    glVertex3f(x + shaftWidth / 2 + toothSize, toothStart, 0.0f);
+    glVertex3f(x + shaftWidth / 2 + toothSize, toothStart + toothSize / 2, 0.0f);
+    glVertex3f(x + shaftWidth / 2, toothStart + toothSize / 2, 0.0f);
+
+    // Gigi Kunci 2 (Di ujung bawah)
+    float toothStart2 = y + shaftLength * 0.85f;
+    glVertex3f(x + shaftWidth / 2, toothStart2, 0.0f);
+    glVertex3f(x + shaftWidth / 2 + toothSize, toothStart2, 0.0f);
+    glVertex3f(x + shaftWidth / 2 + toothSize, toothStart2 + toothSize / 2, 0.0f);
+    glVertex3f(x + shaftWidth / 2, toothStart2 + toothSize / 2, 0.0f);
+    glEnd();
+}
+
 // Render teks sederhana menggunakan bitmap
 void renderBitmapString(float x, float y, void* font, const std::string& string) {
     glRasterPos2f(x, y);
@@ -797,6 +961,11 @@ void renderBitmapString(float x, float y, void* font, const std::string& string)
 
 // Render tampilan 2D (top-down view)
 void render2D() {
+    // Matikan depth test agar 2D selalu digambar di paling depan
+    glDisable(GL_DEPTH_TEST);
+    // Matikan culling agar OpenGL tidak menyembunyikan gambar yang terbalik
+    glDisable(GL_CULL_FACE);
+
     setOrthoViewport(0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 600, 400, 0);
 
     // Gambar maze walls
@@ -804,25 +973,29 @@ void render2D() {
     glLineWidth(2.0f);
     glBegin(GL_LINES);
     for (const auto& wall : maze) {
-        glVertex2f(wall.x1, wall.y1);
-        glVertex2f(wall.x2, wall.y2);
+        // Kita paksa Z ke 0.0f
+        glVertex3f(wall.x1, wall.y1, 0.0f);
+        glVertex3f(wall.x2, wall.y2, 0.0f);
     }
     glEnd();
 
-    // Gambar rays dari player[
+    drawMarker2D(startFlag.x, startFlag.y, 12.0f);
+
+    // Gambar rays dari player
     glLineWidth(1.0f);
     glBegin(GL_LINES);
     for (const auto& ray : rays) {
         if (ray.hit) {
-            if (ray.hitType == 0) glColor3f(0.9f, 0.9f, 0.9f);      // wall - putih
-            else if (ray.hitType == 1) glColor3f(0.0f, 1.0f, 0.0f); // goal - hijau
-            else if (ray.hitType == 2) glColor3f(1.0f, 0.0f, 0.0f); // obstacle - merah
+            if (ray.hitType == 0) glColor3f(0.9f, 0.9f, 0.9f);       // wall
+            else if (ray.hitType == 1) glColor3f(0.0f, 1.0f, 0.0f);  // goal
+            else if (ray.hitType == 2) glColor3f(1.0f, 0.0f, 0.0f);  // obstacle
+            else if (ray.hitType == 3) glColor3f(0.6f, 0.3f, 0.1f);  // kayu
         }
         else {
             glColor3f(0.3f, 0.3f, 0.3f);
         }
-        glVertex2f(ray.x, ray.y);
-        glVertex2f(ray.hitX, ray.hitY);
+        glVertex3f(ray.x, ray.y, 0.0f);
+        glVertex3f(ray.hitX, ray.hitY, 0.0f);
     }
     glEnd();
 
@@ -833,7 +1006,7 @@ void render2D() {
 
     // Gambar horizontal obstacles (kayu)
     for (const auto& obs : horizontalObstacles) {
-        glColor3f(0.6f, 0.3f, 0.1f); // Warna coklat kayu
+        glColor3f(0.6f, 0.3f, 0.1f);
         glBegin(GL_QUADS);
         glVertex2f(obs.x - obs.width / 2, obs.y - obs.height / 2);
         glVertex2f(obs.x + obs.width / 2, obs.y - obs.height / 2);
@@ -844,7 +1017,7 @@ void render2D() {
 
     // Gambar kunci jika belum diambil
     if (!gameKey.collected) {
-        drawCircle(gameKey.x, gameKey.y, gameKey.size, 1.0f, 1.0f, 0.0f);
+        drawKeyMarker(gameKey.x, gameKey.y, gameKey.size);
     }
 
     // Gambar goal
@@ -856,13 +1029,14 @@ void render2D() {
     glVertex2f(goal.x, goal.y + goal.height);
     glEnd();
 
-    // Gambar player dengan efek kedip jika invulnerable
+    // Gambar player
     if (!player.invulnerable || (int)(getCurrentTime() * 10) % 2 == 0) {
         drawCircle(player.x, player.y, player.radius, 0.7f, 0.2f, 0.5f);
 
         // Gambar arah player
         float dirX = player.x + player.radius * 1.5f * cos(player.dir * M_PI / 180.0f);
         float dirY = player.y + player.radius * 1.5f * sin(player.dir * M_PI / 180.0f);
+        glBegin(GL_LINES); // Pastikan ini ada GL_LINES
         glColor3f(1.0f, 1.0f, 1.0f);
         glVertex2f(player.x, player.y);
         glVertex2f(dirX, dirY);
@@ -967,6 +1141,65 @@ void render3D() {
                 drawQuad(x, y, x + slice_width + overlap, y + wall_height,
                     brightness * 0.6f, brightness * 0.3f, brightness * 0.1f);
             }
+
+            else if (rays[i].hitType == 3) {
+                drawQuad(x, y, x + slice_width + overlap, y + wall_height,
+                    brightness * 0.6f, brightness * 0.3f, brightness * 0.1f);
+            }
+
+            // --- BENDERA START ---
+            else if (rays[i].hitType == 4) {
+                // Efek "Checkered Flag" (Belang Hitam Putih)
+                // Kita gunakan index 'i' (nomor sinar) untuk membuat pola garis vertikal
+                bool stripe = (i / 2) % 2 == 0; // Ganti warna setiap 2 strip pixel
+
+                if (stripe) {
+                    // Warna Putih
+                    drawQuad(x, y, x + slice_width + overlap, y + wall_height,
+                        brightness, brightness, brightness);
+                }
+                else {
+                    // Warna Hitam (Abu gelap)
+                    drawQuad(x, y, x + slice_width + overlap, y + wall_height,
+                        brightness * 0.2f, brightness * 0.2f, brightness * 0.2f);
+                }
+            }
+
+            else if (rays[i].hitType == 5) {
+                // 1. UKURAN KECIL (Tetap 20%)
+                float sizeRatio = 0.20f;
+                float orbHeight = wall_height * sizeRatio;
+                // Batasi tinggi maksimum agar tidak glitch saat dekat sekali
+                if (orbHeight > MAP_HEIGHT * 0.3f) orbHeight = MAP_HEIGHT * 0.3f;
+
+                // 2. EFEK MELAYANG (Floating)
+                float floatingOffset = sin(getCurrentTime() * 3.0f) * 8.0f;
+
+                // === PERBAIKAN POSISI VERTIKAL ===
+                // Posisi tengah layar
+                float middleY = MAP_HEIGHT / 2.0f;
+                // Tambahkan offset ke bawah (semakin besar nilai Y, semakin ke bawah)
+                // Kita turunkan sebanyak 25% dari tinggi layar (sekitar 100 pixel)
+                float verticalShiftDown = MAP_HEIGHT * 0.25f;
+
+                // Titik pusat baru (agak di bawah)
+                float centerScreenY = middleY + verticalShiftDown;
+                // =================================
+
+                // Hitung koordinat atas dan bawah berdasarkan pusat baru
+                float orbTop = centerScreenY - (orbHeight / 2.0f) + floatingOffset;
+                float orbBottom = centerScreenY + (orbHeight / 2.0f) + floatingOffset;
+
+                // 4. WARNA BERCAHAYA (GLOWING EFFECT)
+                float pulse = 0.7f + 0.3f * sin(i * 0.1f + getCurrentTime() * 6.0f);
+                float rBase = 1.0f; float gBase = 0.9f; float bBase = 0.3f; // Emas
+                float glowingBrightness = std::max(0.6f, brightness);
+
+                drawQuad(x, orbTop, x + slice_width + overlap, orbBottom,
+                    rBase * pulse * glowingBrightness,
+                    gBase * pulse * glowingBrightness,
+                    bBase * pulse * glowingBrightness);
+            }
         }
     }
 
@@ -977,8 +1210,7 @@ void render3D() {
     // Status kunci
     if (player.hasKey) {
         renderBitmapString(10, MAP_HEIGHT - 30, GLUT_BITMAP_HELVETICA_18, "KEY: COLLECTED");
-        glColor3f(1.0f, 1.0f, 0.0f);
-        drawCircle(200, MAP_HEIGHT - 25, 8, 1.0f, 1.0f, 0.0f);
+        drawKeyMarker(200.0f, MAP_HEIGHT - 25.0f, 8.0f);
     }
     else {
         glColor3f(0.7f, 0.7f, 0.7f);
@@ -1192,8 +1424,8 @@ void update(int value) {
 // Reset permainan ke kondisi awal
 void resetGame() {
     gameState = PLAYING;
-    player.x = 60.0f;
-    player.y = 60.0f;
+    player.x = SPAWN_X;
+    player.y = SPAWN_Y;
     player.dir = 0.0f;
     player.hasKey = false;
     player.lives = 3;
