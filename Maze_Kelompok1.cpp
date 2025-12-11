@@ -119,6 +119,64 @@ struct StartFlag {
     StartFlag(float px, float py, float r) : x(px), y(py), radius(r) {}
 };
 
+// Struct untuk Flat Shading calculation
+struct FlatShading {
+    float Ka, Kd, Ks;  // Koefisien material
+    float Ia, Id, Is;  // Intensitas cahaya
+    float shininess;
+
+    FlatShading() : Ka(0.3f), Kd(0.7f), Ks(0.5f),
+        Ia(0.2f), Id(0.8f), Is(1.0f),
+        shininess(32.0f) {
+    }
+
+    // Fungsi untuk menghitung dot product (N·L)
+    float dotProduct(float nx, float ny, float nz,
+        float lx, float ly, float lz) {
+        return nx * lx + ny * ly + nz * lz;
+    }
+
+    // Fungsi untuk normalisasi vector
+    void normalize(float& x, float& y, float& z) {
+        float length = sqrt(x * x + y * y + z * z);
+        if (length > 0) {
+            x /= length;
+            y /= length;
+            z /= length;
+        }
+    }
+
+    // Implementasi Formula Flat Shading
+    float calculateShading(float nx, float ny, float nz,  // Normal
+        float lx, float ly, float lz,   // Light direction
+        float vx, float vy, float vz) { // View direction
+        normalize(nx, ny, nz);
+        normalize(lx, ly, lz);
+        normalize(vx, vy, vz);
+
+        // Komponen Ambient: Ka * Ia
+        float ambient = Ka * Ia;
+
+        // Komponen Diffuse: Kd * Id * (N·L)
+        float NdotL = std::max(0.0f, dotProduct(nx, ny, nz, lx, ly, lz));
+        float diffuse = Kd * Id * NdotL;
+
+        // Komponen Specular: Ks * Is * (R·V)^n
+        // R = 2*(N·L)*N - L (Reflection formula)
+        float rx = 2.0f * NdotL * nx - lx;
+        float ry = 2.0f * NdotL * ny - ly;
+        float rz = 2.0f * NdotL * nz - lz;
+        normalize(rx, ry, rz);
+
+        float RdotV = std::max(0.0f, dotProduct(rx, ry, rz, vx, vy, vz));
+        float specular = Ks * Is * std::pow(RdotV, shininess);
+
+        // Total Intensity: I = Ambient + Diffuse + Specular
+        float intensity = ambient + diffuse + specular;
+        return std::min(1.0f, intensity); // Clamp ke [0,1]
+    }
+};
+
 // Konstanta Posisi Spawn (Agar Player & Bendera satu posisi)
 const float SPAWN_X = 60.0f;
 const float SPAWN_Y = 60.0f;
@@ -132,6 +190,8 @@ std::vector<Obstacle> obstacles;             // Daftar rintangan bergerak
 std::vector<HorizontalObstacle> horizontalObstacles;
 Goal goal(525.0f, 60.0f, 30.0f, 20.0f, true); // Goal di ujung maze, memerlukan kunci
 Key gameKey(320.0f, 200.0f, 8.0f);        // Kunci di tengah maze
+FlatShading flatShader;
+float lightX = 300.0f, lightY = 200.0f, lightZ = -200.0f;
 
 // Konstanta ray casting
 const float RAY_LENGTH = 500.0f;
@@ -1099,7 +1159,6 @@ void render3D() {
     drawQuad(0, MAP_HEIGHT / 2, MAP_WIDTH, MAP_HEIGHT, 0.2f, 0.3f, 0.3f);
 
     // Gambar dinding, pintu, dan rintangan berdasarkan ray casting
-    // Di render3D(), ganti bagian render wall jadi:
     float slice_width = (float)MAP_WIDTH / NUM_RAYS;
     for (int i = 0; i < NUM_RAYS; i++) {
         if (rays[i].hit) {
@@ -1118,9 +1177,34 @@ void render3D() {
             float y = (MAP_HEIGHT - wall_height) / 2.0f;
 
             if (rays[i].hitType == 0) {
+                // Hitung Normal vector dinding (menghadap ke player)
+                float nx = -rays[i].dx;
+                float ny = -rays[i].dy;
+                float nz = 0.0f;
+
+                // Light vector (dari hit point ke light source)
+                float lx = lightX - rays[i].hitX;
+                float ly = lightY - rays[i].hitY;
+                float lz = lightZ;
+
+                // View vector (dari hit point ke player)
+                float vx = player.x - rays[i].hitX;
+                float vy = player.y - rays[i].hitY;
+                float vz = -100.0f;
+
+                // Terapkan Formula Flat Shading
+                float shadingIntensity = flatShader.calculateShading(
+                    nx, ny, nz,  // Normal
+                    lx, ly, lz,  // Light
+                    vx, vy, vz   // View
+                );
+
                 drawQuad(x, y, x + slice_width + overlap, y + wall_height,
-                    brightness * 0.5f, brightness * 0.6f, brightness * 0.6f);
+                    brightness * 0.5f,
+                    brightness * 0.6f,
+                    brightness * 0.6f);
             }
+
             else if (rays[i].hitType == 1) {
                 float greenIntensity = brightness * (0.8f + 0.2f * sin(getCurrentTime() * 5.0f));
                 if (!player.hasKey) {
@@ -1383,8 +1467,8 @@ void update(int value) {
             return;
         }
 
-        float moveSpeed = 2.5f;    // Kecepatan gerak player
-        float rotSpeed = 3.0f;     // Kecepatan rotasi player
+        float moveSpeed = 2.5f;    
+        float rotSpeed = 3.0f;     
 
         // Kontrol pergerakan dengan implementasi translasi manual
         if (keys['w'] || keys['W']) {
@@ -1398,10 +1482,51 @@ void update(int value) {
                 -moveSpeed * sin(player.dir * M_PI / 180.0f));
         }
         if (keys['a'] || keys['A']) {
-            player.dir -= rotSpeed; // Rotasi kiri
+            // Rotasi Kiri (Counter-Clockwise) menggunakan Rotation Matrix
+            float deltaTheta = -rotSpeed * M_PI / 180.0f; 
+
+            // Sudut orientasi saat ini dan sudut baru
+            float theta = player.dir * M_PI / 180.0f;
+            float theta_new = theta + deltaTheta;
+
+            // Vektor arah saat ini (x, y) = (cos(theta), sin(theta))
+            float x = cos(theta);
+            float y = sin(theta);
+
+            // Terapkan Rotation Matrix untuk rotasi sebesar delta theta
+            float cos_delta = cos(deltaTheta);
+            float sin_delta = sin(deltaTheta);
+
+            float x_new = x * cos_delta - y * sin_delta;
+            float y_new = x * sin_delta + y * cos_delta;
+
+            theta_new = atan2(y_new, x_new);
+
+            player.dir = theta_new * 180.0f / M_PI;  
         }
+
         if (keys['d'] || keys['D']) {
-            player.dir += rotSpeed; // Rotasi kanan
+            // Rotasi Kanan (Clockwise) menggunakan Rotation Matrix
+            float deltaTheta = rotSpeed * M_PI / 180.0f;   
+
+            // Sudut orientasi saat ini dan sudut baru
+            float theta = player.dir * M_PI / 180.0f;
+            float theta_new = theta + deltaTheta;
+
+            // Vektor arah saat ini (x, y) = (cos(theta), sin(theta))
+            float x = cos(theta);
+            float y = sin(theta);
+
+            // Terapkan Rotation Matrix untuk rotasi sebesar delta theta
+            float cos_delta = cos(deltaTheta);
+            float sin_delta = sin(deltaTheta);
+
+            float x_new = x * cos_delta - y * sin_delta;
+            float y_new = x * sin_delta + y * cos_delta;
+
+            theta_new = atan2(y_new, x_new);
+
+            player.dir = theta_new * 180.0f / M_PI;  
         }
 
         // Normalisasi sudut agar tetap dalam 0-360 derajat
